@@ -1,12 +1,10 @@
-import sys
+import os, sys
 dist_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, dist_dir)
 
-import json
-import os
-import sublime, sublime_plugin
-import time
 import diff_match_patch
+import json
+import sublime, sublime_plugin
 
 class ToggleRecordingCommand(sublime_plugin.TextCommand):
 
@@ -27,32 +25,50 @@ class ToggleRecordingCommand(sublime_plugin.TextCommand):
 
 class PlaybackRecordingCommand(sublime_plugin.TextCommand):
 
-	checkpoint_gen = None
+	ops = None
+	count = 0
 
-	def run(self, edit, next=False, clear=False, buf=None):
-		if buf:
+	def run(self, edit, clear=False):
+		if not PlaybackRecordingCommand.ops:
 			self.view.erase(edit, sublime.Region(0, self.view.size()))
 			changes = []
-			with open(os.path.join(os.path.dirname(self.view.file_name()), buf), 'r') as f:
+			with open(os.path.join(os.path.dirname(self.view.file_name()), 'recording'), 'r') as f:
 				for line in f:
 					changes.append(json.loads(line))
-			PlaybackRecordingCommandcheckpoint_gen = gencheckpoints(changes)
+			PlaybackRecordingCommand.ops = gencheckpoints(changes)
+			PlaybackRecordingCommand.count = 0
+			self.view.run_command('playback_recording')
 		elif clear:
-			PlaybackRecordingCommandcheckpoint_gen = None
-		elif next:
+			PlaybackRecordingCommand.ops = None
+		else:
+			self.view.run_command('enter_insert_mode')
 			try:
-				ops = checkpoint_gen.next()
-				optype, opargs = ops.next()
+				PlaybackRecordingCommand.count += 1
+				if PlaybackRecordingCommand.count % 2 == 0:
+					sublime.status_message('/')
+				else:
+					sublime.status_message('\\')
+				optype, opargs = next(PlaybackRecordingCommand.ops)
 				if optype == 'insert':
-					self.view.insert(edit, opargs['point'], opargs['text'])
+					point, text = opargs['point'], opargs['text']
+					self.view.sel().clear()
+					self.view.sel().add(sublime.Region(point))
+					self.view.insert(edit, point, text)
+				elif optype == 'pause':
+					sublime.status_message('?')
+					self.view.run_command('exit_insert_mode')
+					self.view.run_command('save')
+					return
+				sublime.set_timeout_async(lambda: self.view.run_command('playback_recording'), 50)
 			except StopIteration:
-				print('done')
-				pass
-		#sublime.set_timeout_async(lambda: self.view.run_command('exec_command', {'command': command}), 1000)
+				sublime.status_message('\\o/')
+				PlaybackRecordingCommand.ops = None
 
 def gencheckpoints(changes):
 	for change in changes:
-		yield genops(change)
+		for op in genops(change):
+			yield op
+		yield ('pause', None)
 
 def genops(change):
 	differ = diff_match_patch.diff_match_patch()
@@ -62,7 +78,12 @@ def genops(change):
 		if diff_type == differ.DIFF_EQUAL:
 			point += len(text)
 		elif diff_type == differ.DIFF_INSERT:
-			yield ('insert', {'point': point, 'text': text})
+			if text[-1] == '\n':
+				yield ('insert', {'point': point, 'text': '\n'})
+				text = text[:-1]
+			for i, c in enumerate(text):
+				yield ('insert', {'point': point+i, 'text': c})
+			point += len(text)
 		elif diff_type == differ.DIFF_DELETE:
 			continue
 
@@ -71,34 +92,18 @@ class ChangeBuffer(object):
 	def __init__(self, view):
 		self.view = view
 		self.target = view.file_name()
-		self.ts = time.time()
 		self.state = view.substr(sublime.Region(0, view.size()))
-		self.logfile = open(
-			os.path.join(
-				os.path.dirname(self.target),
-				os.path.basename(self.target) + '.rec'), 'w')
+		self.logfile = open(os.path.join(os.path.dirname(self.target), 'recording'), 'w')
 
 	def checkpoint(self, newState):
 		print('checkpoint')
 		change = {
 			'oldState': self.state,
-			'newState': newState,
-			'deltat': time.time() - self.ts
+			'newState': newState
 		}
 		self.logfile.write(json.dumps(change))
 		self.logfile.write('\n')
 		self.logfile.flush()
-		self.state = newState
-
-	def add_change(self, change):
-		self.ts = time.time()
-		self.changes.append(change)
-
-	def update_state(self, newState):
-		change = transform(self.state, newState)
-		if not change:
-			return
-		self.add_change(change)
 		self.state = newState
 
 class ChangeRecorder(sublime_plugin.EventListener):
