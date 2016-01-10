@@ -1,0 +1,10 @@
+[
+	{
+		"keys": ["super+shift+-"],
+		"command": "toggle_recording"
+	},
+	{
+		"keys": ["super+shift+="],
+		"command": "playback_recording"
+	}
+]

@@ -1,0 +1,15 @@
+[
+	{
+		"caption": "HitRecord: Toggle Recording",
+		"command": "toggle_recording"
+	},
+	{
+		"caption": "HitRecord: Playback Recording",
+		"command": "playback_recording"
+	},
+	{
+		"caption": "HitRecord: Cancel Playback",
+		"command": "playback_recording",
+		"args": {"clear": true}
+	}
+]
