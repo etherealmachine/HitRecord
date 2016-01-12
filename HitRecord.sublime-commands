@@ -1,7 +1,18 @@
 [
 	{
-		"caption": "HitRecord: Toggle Recording",
-		"command": "toggle_recording"
+		"caption": "HitRecord: Start Recording",
+		"command": "hit_record",
+		"args": {"start": true}
+	},
+	{
+		"caption": "HitRecord: Stop Recording",
+		"command": "hit_record",
+		"args": {"stop": true}
+	},
+	{
+		"caption": "HitRecord: Toggle Pause",
+		"command": "hit_record",
+		"args": {"toggle_pause": true}
 	},
 	{
 		"caption": "HitRecord: Playback Recording",
@@ -11,5 +22,9 @@
 		"caption": "HitRecord: Cancel Playback",
 		"command": "playback_recording",
 		"args": {"clear": true}
+	},
+	{
+		"caption": "HitRecord: View Recording",
+		"command": "view_recording"
 	}
 ]

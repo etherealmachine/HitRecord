@@ -1,0 +1,4 @@
+{
+	"ttyecho": "ttyecho",
+	"tty": "/dev/ttys000"
+}

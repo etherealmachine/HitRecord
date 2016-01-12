@@ -1,10 +1,11 @@
 [
 	{
-		"keys": ["super+shift+-"],
-		"command": "toggle_recording"
-	},
-	{
 		"keys": ["super+shift+="],
 		"command": "playback_recording"
+	},
+	{
+		"keys": ["super+shift+-"],
+		"command": "hit_record",
+		"args": {"toggle_pause": true}
 	}
 ]

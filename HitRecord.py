@@ -1,23 +1,109 @@
 import difflib
 import os
 import sublime, sublime_plugin
+import subprocess
+import tempfile
 
-class ToggleRecordingCommand(sublime_plugin.TextCommand):
 
-	recording = False
+class HitRecordCommand(sublime_plugin.TextCommand):
 
-	def run(self, edit, **args):
-		ToggleRecordingCommand.recording = not ToggleRecordingCommand.recording
-		if ToggleRecordingCommand.recording:
+	recording = None
+	paused = False
+
+	def run(self, edit, start=False, stop=False, toggle_pause=False):
+		if start:
+			self.start()
+		elif stop:
+			self.stop()
+		elif toggle_pause:
+			self.toggle_pause()
+
+	def start(self):
+		if HitRecordCommand.recording:
+			HitRecordCommand.recording.close()
+		HitRecordCommand.recording = Recording(self.view)
+		HitRecordCommand.paused = False
+		sublime.status_message('recording')
+
+	def stop(self):
+		if HitRecordCommand.recording:
+			HitRecordCommand.recording.close()
+			HitRecordCommand.recording = None
+		sublime.status_message('recording stopped')
+
+	def toggle_pause(self):
+		if HitRecordCommand.paused:
+			HitRecordCommand.paused = False
 			sublime.status_message('recording')
-			if not ChangeRecorder.buf:
-				ChangeRecorder.buf = ChangeBuffer(self.view)
-			elif ChangeRecorder.buf.view != self.view:
-				ChangeRecorder.buf.logfile.close()
-				ChangeRecorder.buf = ChangeBuffer(self.view)
-		if not ToggleRecordingCommand.recording:
-			sublime.status_message('')
-			ChangeRecorder.buf.logfile.close()
+		else:
+			HitRecordCommand.paused = True
+			sublime.status_message('recording paused')
+
+	def on_post_save(view):
+		if (HitRecordCommand.recording and
+			  not HitRecordCommand.paused and
+			  HitRecordCommand.recording.view == view):
+			HitRecordCommand.recording.checkpoint()
+
+	def on_close(view):
+		if (HitRecordCommand.recording and
+			  HitRecordCommand.recording.view == view):
+			HitRecordCommand.recording.close()
+
+
+class ViewRecordingCommand(sublime_plugin.TextCommand):
+
+	def run(self, edit):
+		if not HitRecordCommand.recording:
+			sublime.error_message('no recording found')
+			return
+		self.view.window().open_file(HitRecordCommand.recording.fname)
+
+
+class Listener(sublime_plugin.EventListener):
+	
+	def on_post_save(self, view):
+		HitRecordCommand.on_post_save(view)
+
+	def on_close(self, view):
+		HitRecordCommand.on_close(view)
+
+
+class Recording(object):
+
+	def __init__(self, view):
+		self.view = view
+		self.fname = Recording.name(self.view)
+		self.log = open(self.fname, 'w+')
+
+	def checkpoint(self):
+		self.log.write('CHECKPOINT\n')
+		self.log.write(self.view.substr(sublime.Region(0, self.view.size())))
+		self.log.flush()
+
+	def close(self):
+		self.log.close()
+
+	@staticmethod
+	def name(view):
+		dirname, basename = os.path.split(view.file_name())
+		return os.path.expanduser(os.path.join('~', basename+'.rec'))
+
+	@staticmethod
+	def load(fname):
+		checkpoints = []
+		with open(fname, 'r') as f:
+			lines = []
+			for line in f:
+				if line == 'CHECKPOINT\n':
+					checkpoints.append(''.join(lines))
+					lines = []
+				else:
+					lines.append(line)
+			if lines:
+				checkpoints.append(''.join(lines))
+		return checkpoints
+
 
 class PlaybackRecordingCommand(sublime_plugin.TextCommand):
 
@@ -29,18 +115,7 @@ class PlaybackRecordingCommand(sublime_plugin.TextCommand):
 			PlaybackRecordingCommand.ops = None
 		elif not PlaybackRecordingCommand.ops:
 			self.view.erase(edit, sublime.Region(0, self.view.size()))
-			checkpoints = []
-			with open(os.path.join(os.path.dirname(self.view.file_name()), 'recording'), 'r') as f:
-				lines = []
-				for line in f:
-					if line == 'CHECKPOINT\n':
-						checkpoints.append(''.join(lines))
-						lines = []
-					else:
-						lines.append(line)
-				if lines:
-					checkpoints.append(''.join(lines))
-			PlaybackRecordingCommand.ops = genops(checkpoints)
+			PlaybackRecordingCommand.ops = genops(Recording.load(Recording.name(self.view)))
 			PlaybackRecordingCommand.count = 0
 			self.view.run_command('playback_recording')
 		else:
@@ -67,6 +142,16 @@ class PlaybackRecordingCommand(sublime_plugin.TextCommand):
 					self.view.run_command('exit_insert_mode')
 					self.view.run_command('save')
 					return
+				elif optype == 'command':
+					settings = sublime.load_settings('HitRecord.sublime-settings')
+					ttyecho = settings.get('ttyecho')
+					if ttyecho:
+						tty = settings.get('tty')
+						cmd = opargs['cmd']
+						if subprocess.call([ttyecho, '-n', tty, cmd], shell=True):
+							sublime.error_message('command failed: ' + cmd)
+					else:
+						print('ignoring command: no ttyecho set')
 				sublime.set_timeout_async(lambda: self.view.run_command('playback_recording'), 50)
 			except StopIteration:
 				sublime.status_message('\\o/')
@@ -86,24 +171,3 @@ def genops(checkpoints):
 			elif diff[:2] == '- ':
 				yield ('erase', {'point': point})
 		yield ('pause', None)
-
-class ChangeBuffer(object):
-
-	def __init__(self, view):
-		self.view = view
-		self.logfile = open(os.path.join(os.path.dirname(self.view.file_name()), 'recording'), 'w')
-
-	def checkpoint(self):
-		self.logfile.write('CHECKPOINT\n')
-		self.logfile.write(self.view.substr(sublime.Region(0, self.view.size())))
-		self.logfile.flush()
-
-class ChangeRecorder(sublime_plugin.EventListener):
-
-	buf = None
-
-	def on_post_save(self, view):
-		if not ToggleRecordingCommand.recording:
-			return
-		if view == ChangeRecorder.buf.view:
-			ChangeRecorder.buf.checkpoint()
