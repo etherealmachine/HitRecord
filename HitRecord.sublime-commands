@@ -10,21 +10,23 @@
 		"args": {"stop": true}
 	},
 	{
+		"caption": "HitRecord: Resume Recording",
+		"command": "hit_record",
+		"args": {"resume": true}
+	},
+	{
 		"caption": "HitRecord: Toggle Pause",
 		"command": "hit_record",
 		"args": {"toggle_pause": true}
 	},
 	{
 		"caption": "HitRecord: Playback Recording",
-		"command": "playback_recording"
+		"command": "playback_recording",
+		"args": {"start": true}
 	},
 	{
 		"caption": "HitRecord: Cancel Playback",
 		"command": "playback_recording",
 		"args": {"clear": true}
-	},
-	{
-		"caption": "HitRecord: View Recording",
-		"command": "view_recording"
 	}
 ]
