@@ -69,8 +69,8 @@ class ExecInShellCommand(sublime_plugin.TextCommand):
 				try:
 					shell_command = '{} {} "{}"'.format(ttyecho, tty, command)
 					output = subprocess.check_output(shell_command, shell=True, stderr=subprocess.STDOUT)
-				except subprocess.CalledProcessError:
-					sublime.error_message('command "{}" failed: {}'.format(command, output))
+				except subprocess.CalledProcessError as ex:
+					print('command "{}" failed: {}'.format(command, ex.output))
 				if HitRecordCommand.recorder:
 					HitRecordCommand.recorder.command(command)
 			else:
@@ -144,18 +144,48 @@ class Recording(object):
 				state.append(line)
 
 
+def scanline(diffs):
+	if len(diffs) <= 1:
+		return None
+	for i, curr in enumerate(diffs[1:]):
+		prev = diffs[i-1]
+		if curr.startswith(' ') and prev == '+ \n':
+			return i-1
+		if not curr.startswith('+'):
+			return None
+	return None
+
+
 def genops(oldState, newState):
-	diffs = difflib.ndiff(oldState, newState)
+	diffs = list(difflib.ndiff(oldState, newState))
 	point = 0
-	for diff in diffs:
-		if diff[:2] == '  ':
+	ops = []
+	while diffs:
+		diff = diffs[0]
+		t, c = diff[0], diff[2:]
+		if t == ' ':
+			diffs.pop(0)
 			point += 1
-		elif diff[:2] == '+ ':
-			yield ('insert', {'point': point, 'text': diff[2:]})
-			point += 1
-		elif diff[:2] == '- ':
-			yield ('erase', {'point': point})
-	yield ('pause', None)
+		elif t == '+':
+			nl = scanline(diffs)
+			if nl:
+				ops.append(('insert', {'point': point, 'text': '\n'}))
+				for i in range(nl):
+					diff = diffs.pop(0)
+					t, c = diff[0], diff[2:]
+					ops.append(('insert', {'point': point, 'text': c}))
+					point += 1
+				point += 1
+				diffs.pop(0)
+			else:
+				diffs.pop(0)
+				ops.append(('insert', {'point': point, 'text': c}))
+				point += 1
+		elif t == '-':
+			diffs.pop(0)
+			ops.append(('erase', {'point': point}))
+	ops.append(('pause', None))
+	return ops
 
 
 class PlaybackRecordingCommand(sublime_plugin.TextCommand):
